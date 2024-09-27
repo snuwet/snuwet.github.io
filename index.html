@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SNUWET - 웹캠 및 화면 녹화</title>
+    <style>
+        .container {
+            display: flex;
+            justify-content: space-around;
+            margin-top: 20px;
+        }
+        .video-container {
+            width: 30%;
+        }
+        canvas, video {
+            width: 100%;
+            border: 1px solid #ccc;
+        }
+        .button-container {
+            text-align: center;
+            margin-top: 20px;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            display: none;
+        }
+        #startBtn {
+            display: inline-block;
+        }
+        #faceInfo {
+            margin-top: 20px;
+            text-align: center;
+            font-size: 18px;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+</head>
+<body>
+    <h1>SNUWET - 웹캠 및 화면 녹화</h1>
+    <div class="button-container">
+        <button id="startBtn">시작</button>
+        <button id="stopBtn" disabled>중지</button>
+    </div>
+    <div class="container">
+        <div class="video-container">
+            <h2>웹캠</h2>
+            <canvas id="output"></canvas>
+            <div id="faceInfo">감지된 얼굴 없음</div>
+        </div>
+        <div class="video-container">
+            <h2>화면 녹화</h2>
+            <video id="screen" autoplay muted></video>
+        </div>
+    </div>
+    <!-- Add calibration screen div -->
+    <div id="calibrationScreen" style="display:none; position: fixed; top:0; left:0; width:100%; height:100%; background-color:black; z-index:1000;">
+        <canvas id="calibrationCanvas" width="1920" height="1080" style="width:100%; height:100%;"></canvas>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>
