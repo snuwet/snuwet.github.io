@@ -61,25 +61,8 @@ async function startRecording() {
         screenVideo.srcObject = screenStream;
         await screenVideo.play();
 
-        // 오버레이 캔버스 생성
-        const overlayCanvas = document.createElement('canvas');
-        overlayCanvas.width = screenVideo.clientWidth;
-        overlayCanvas.height = screenVideo.clientHeight;
-        const overlayCtx = overlayCanvas.getContext('2d');
-
-        // 오버레이 캔버스를 비디오 요소 위에 겹쳐서 배치
-        overlayCanvas.style.position = 'absolute';
-        overlayCanvas.style.top = '0';
-        overlayCanvas.style.left = '0';
-        overlayCanvas.style.pointerEvents = 'none';
-        screenVideo.parentElement.style.position = 'relative';
-        screenVideo.parentElement.appendChild(overlayCanvas);
-
-        // 오버레이 스트림 생성
-        const overlayStream = overlayCanvas.captureStream(30);
-
-        // **screenRecorder 초기화 및 시작**
-        screenRecorder = new MediaRecorder(overlayStream, {
+        // screenRecorder 초기화 및 시작
+        screenRecorder = new MediaRecorder(screenStream, {
             mimeType: 'video/webm',
             videoBitsPerSecond: 2500000
         });
@@ -91,6 +74,17 @@ async function startRecording() {
         };
 
         screenRecorder.start();
+
+        // 오버레이 캔버스 생성 및 설정
+        const overlayCanvas = document.createElement('canvas');
+        overlayCanvas.width = window.innerWidth;
+        overlayCanvas.height = window.innerHeight;
+        overlayCanvas.style.position = 'fixed';
+        overlayCanvas.style.top = '0';
+        overlayCanvas.style.left = '0';
+        overlayCanvas.style.pointerEvents = 'none';
+        document.body.appendChild(overlayCanvas);
+        const overlayCtx = overlayCanvas.getContext('2d');
 
         // 오버레이 그리기 시작
         drawOverlay(overlayCtx, overlayCanvas);
@@ -105,7 +99,7 @@ async function startRecording() {
 
         mediaRecorder.start();
 
-        mediaRecorder.onstop = saveVideo;
+        mediaRecorder.onstop = saveWebcamVideo; // 웹캠 영상 저장 함수 호출
         screenRecorder.onstop = saveScreenVideo;
 
         startBtn.style.display = 'none';
@@ -146,8 +140,14 @@ function stopRecording() {
     stopBtn.style.display = 'none';
     stopBtn.disabled = true;
 
+    // 오버레이 캔버스 제거
+    const overlayCanvas = document.querySelector('canvas[style*="position: fixed"]');
+    if (overlayCanvas) {
+        overlayCanvas.remove();
+    }
+
     saveFaceMeshData();
-    saveGazeData(); // 추가된 코드
+    saveGazeData();
 }
 
 function saveFaceMeshData() {
@@ -157,21 +157,6 @@ function saveFaceMeshData() {
     a.style.display = 'none';
     a.href = url;
     a.download = 'face_mesh_data.json';
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => {
-        document.body.removeChild(a);
-        window.URL.revokeObjectURL(url);
-    }, 100);
-}
-
-function saveVideo() {
-    const blob = new Blob(recordedChunks, { type: 'video/webm' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.style.display = 'none';
-    a.href = url;
-    a.download = 'overlayed_video.webm';
     document.body.appendChild(a);
     a.click();
     setTimeout(() => {
@@ -439,6 +424,22 @@ function saveGazeData() {
     a.style.display = 'none';
     a.href = url;
     a.download = 'gaze_data.json';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+    }, 100);
+}
+
+// 웹캠 영상 저장 함수 추가
+function saveWebcamVideo() {
+    const blob = new Blob(recordedChunks, { type: 'video/webm' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.style.display = 'none';
+    a.href = url;
+    a.download = 'webcam_recording.webm';
     document.body.appendChild(a);
     a.click();
     setTimeout(() => {
