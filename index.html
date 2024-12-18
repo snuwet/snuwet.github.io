@@ -40,12 +40,13 @@
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
     <script src="tracker.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 </head>
 <body>
     <h1>SNUWET - 웹캠 및 화면 녹화</h1>
     <div class="button-container">
         <button id="startBtn">시작</button>
-        <button id="stopBtn" disabled>중지</button>
+        <button id="stopBtn" disabled>완료</button>
         <button id="calibrationBtn" style="display: none;">캘리브레이션 시작</button>
     </div>
     <div class="container">
@@ -59,14 +60,12 @@
             <video id="screen" autoplay muted></video>
         </div>
     </div>
-    <!-- Add calibration screen div -->
+
     <div id="calibrationScreen" style="display:none; position: fixed; top:0; left:0; width:100%; height:100%; background-color:black; z-index:1000;">
         <canvas id="calibrationCanvas" width="1920" height="1080" style="width:100%; height:100%;"></canvas>
     </div>
     <script src="app.js"></script>
-    <!-- index.html의 body 끝부분에 추가 -->
     <script>
-        // 페이지 로드 후 모델 초기화
         window.addEventListener('load', () => {
             initializeModel();
         });

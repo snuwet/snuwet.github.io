@@ -1,4 +1,8 @@
-let webcamStream, screenStream, faceMesh, canvasStream, mediaRecorder, screenRecorder;
+let webcamStream, screenStream, faceMesh;
+let mediaRecorder, screenRecorder;
+let webcamChunks = [];
+let screenChunks = [];
+
 const canvasElement = document.getElementById('output');
 const canvasCtx = canvasElement.getContext('2d');
 const faceInfoElement = document.getElementById('faceInfo');
@@ -6,20 +10,13 @@ const faceInfoElement = document.getElementById('faceInfo');
 const startBtn = document.getElementById('startBtn');
 const stopBtn = document.getElementById('stopBtn');
 const screenVideo = document.getElementById('screen');
-const recordedChunks = [];
-const screenChunks = [];
-const faceMeshData = [];
-
-let latestFaceLandmarks = null;
-
 const calibrationBtn = document.getElementById('calibrationBtn');
 
-const gazeData = []; // 추가된 코드
+let latestFaceLandmarks = null;
 
 startBtn.addEventListener('click', async () => {
     await startRecording();
 });
-
 
 stopBtn.addEventListener('click', stopRecording);
 
@@ -47,35 +44,42 @@ async function startRecording() {
         await setupFaceMesh();
 
         const sendToFaceMesh = async () => {
-            await faceMesh.send({image: webcamVideo});
+            await faceMesh.send({ image: webcamVideo });
             requestAnimationFrame(sendToFaceMesh);
         };
         sendToFaceMesh();
 
-        canvasStream = canvasElement.captureStream(30);
-
         await startScreenRecording();
-
-        // 화면 스트림의 비디오 요소를 가져옵니다
-        const screenVideo = document.getElementById('screen');
         screenVideo.srcObject = screenStream;
         await screenVideo.play();
 
-        // screenRecorder 초기화 및 시작
+        // 화면 녹화
         screenRecorder = new MediaRecorder(screenStream, {
             mimeType: 'video/webm',
-            videoBitsPerSecond: 2500000
+            videoBitsPerSecond: 700000
         });
-
         screenRecorder.ondataavailable = (event) => {
             if (event.data.size > 0) {
                 screenChunks.push(event.data);
             }
         };
-
         screenRecorder.start();
+        screenRecorder.onstop = saveScreenVideo;
 
-        // 오버레이 캔버스 생성 및 설정
+        // 화상 녹화 (landmark는 오직 canvas에만 표시되고, 원본은 그대로 저장)
+        mediaRecorder = new MediaRecorder(webcamStream, { 
+            mimeType: 'video/webm', 
+            videoBitsPerSecond: 1500000 
+        });
+        mediaRecorder.ondataavailable = (event) => {
+            if (event.data.size > 0) {
+                webcamChunks.push(event.data);
+            }
+        };
+        mediaRecorder.start();
+        mediaRecorder.onstop = saveWebcamVideo;
+
+        // 오버레이 캔버스
         const overlayCanvas = document.createElement('canvas');
         overlayCanvas.width = window.innerWidth;
         overlayCanvas.height = window.innerHeight;
@@ -85,33 +89,17 @@ async function startRecording() {
         overlayCanvas.style.pointerEvents = 'none';
         document.body.appendChild(overlayCanvas);
         const overlayCtx = overlayCanvas.getContext('2d');
-
-        // 오버레이 그리기 시작
         drawOverlay(overlayCtx, overlayCanvas);
 
-        mediaRecorder = new MediaRecorder(canvasStream, { mimeType: 'video/webm' });
-
-        mediaRecorder.ondataavailable = (event) => {
-            if (event.data.size > 0) {
-                recordedChunks.push(event.data);
-            }
-        };
-
-        mediaRecorder.start();
-
-        mediaRecorder.onstop = saveWebcamVideo; // 웹캠 영상 저장 함수 호출
-        screenRecorder.onstop = saveScreenVideo;
-
         startBtn.style.display = 'none';
-        stopBtn.style.display = 'inline-block';
         calibrationBtn.style.display = 'inline-block';
+        stopBtn.style.display = calibrationBtn.style.display === 'none' ? 'inline-block' : 'none';
         stopBtn.disabled = false;
 
     } catch (err) {
         console.error("녹화를 시작할 수 없습니다:", err);
     }
 }
-
 
 async function startScreenRecording() {
     try {
@@ -123,61 +111,84 @@ async function startScreenRecording() {
             audio: false
         };
         screenStream = await navigator.mediaDevices.getDisplayMedia(displayMediaOptions);
-
-        // 기존의 screenVideo 관련 코드는 삭제 또는 주석 처리
-        // screenVideo.srcObject = screenStream;
     } catch (err) {
         console.error("Error: " + err);
     }
 }
 
 function stopRecording() {
-    webcamStream.getTracks().forEach(track => track.stop());
-    screenStream.getTracks().forEach(track => track.stop());
-    mediaRecorder.stop();
-    screenRecorder.stop();
+    // 모든 트랙 정지
+    if (webcamStream) {
+        webcamStream.getTracks().forEach(track => track.stop());
+    }
+    if (screenStream) {
+        screenStream.getTracks().forEach(track => track.stop());
+    }
+
+    // 녹화 중지 -> onstop 이벤트에서 파일 다운로드 실행
+    if (mediaRecorder && mediaRecorder.state !== "inactive") {
+        mediaRecorder.stop();
+    }
+    if (screenRecorder && screenRecorder.state !== "inactive") {
+        screenRecorder.stop();
+    }
+
     startBtn.style.display = 'inline-block';
     stopBtn.style.display = 'none';
     stopBtn.disabled = true;
 
-    // 오버레이 캔버스 제거
     const overlayCanvas = document.querySelector('canvas[style*="position: fixed"]');
     if (overlayCanvas) {
         overlayCanvas.remove();
     }
-
-    saveFaceMeshData();
-    saveGazeData();
-}
-
-function saveFaceMeshData() {
-    const blob = new Blob([JSON.stringify(faceMeshData)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.style.display = 'none';
-    a.href = url;
-    a.download = 'face_mesh_data.json';
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => {
-        document.body.removeChild(a);
-        window.URL.revokeObjectURL(url);
-    }, 100);
 }
 
 function saveScreenVideo() {
+    const timestamp = new Date().toLocaleString('ko-KR', {
+        year: '2-digit',
+        month: '2-digit',
+        day: '2-digit',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: false
+    }).replace(/[. :]/g, '').replace(/(\d{6})(\d{4})/, '$1-$2');
+
     const blob = new Blob(screenChunks, { type: 'video/webm' });
-    const url = URL.createObjectURL(blob);
+    screenChunks = [];
+
+    const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.style.display = 'none';
     a.href = url;
-    a.download = 'screen_recording.webm';
+    a.download = `screen_record_${timestamp}.dat`;
     document.body.appendChild(a);
     a.click();
-    setTimeout(() => {
-        document.body.removeChild(a);
-        window.URL.revokeObjectURL(url);
-    }, 100);
+    window.URL.revokeObjectURL(url);
+    a.remove();
+}
+
+function saveWebcamVideo() {
+    const timestamp = new Date().toLocaleString('ko-KR', {
+        year: '2-digit',
+        month: '2-digit',
+        day: '2-digit',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: false
+    }).replace(/[. :]/g, '').replace(/(\d{6})(\d{4})/, '$1-$2');
+
+    const blob = new Blob(webcamChunks, { type: 'video/webm' });
+    webcamChunks = [];
+
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.style.display = 'none';
+    a.href = url;
+    a.download = `webcam_record_${timestamp}.dat`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    a.remove();
 }
 
 async function setupFaceMesh() {
@@ -198,9 +209,12 @@ async function setupFaceMesh() {
 function onResults(results) {
     canvasCtx.save();
     canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+
+    // 캔버스에만 face landmark를 표시하고, 실제 녹화된 영상에는 표시되지 않도록 함
     canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
     let faceInfo = '감지된 얼굴 없음';
-    
+
     if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
         faceInfo = '얼굴 감지됨';
         for (const landmarks of results.multiFaceLandmarks) {
@@ -222,18 +236,12 @@ function onResults(results) {
     } else {
         latestFaceLandmarks = [];
     }
-    
+
     faceInfoElement.textContent = faceInfo;
     canvasCtx.restore();
-
-    if (window.gazeModel && latestFaceLandmarks) {
-        const gazePoint = predictGaze(window.gazeModel, latestFaceLandmarks);
-        if (gazePoint) {
-            console.log('예측된 시선 위치:', gazePoint);
-        }
-    }
 }
 
+// 캘리브레이션 화면은 유지하되, 회귀 분석(모델 훈련) 등은 제거
 async function startCalibration() {
     const calibrationScreen = document.getElementById('calibrationScreen');
     const calibrationCanvas = document.getElementById('calibrationCanvas');
@@ -254,9 +262,7 @@ async function startCalibration() {
     calibrationCanvas.height = screenHeight;
 
     startCalibrationAnimation(calibCtx, screenWidth, screenHeight);
-
 }
-
 
 function startCalibrationAnimation(calibCtx, screenWidth, screenHeight) {
     const positions = [
@@ -275,7 +281,6 @@ function startCalibrationAnimation(calibCtx, screenWidth, screenHeight) {
         {x: 0.3 * screenWidth, y: 0.7 * screenHeight}
     ];
 
-    let currentIndex = 0;
     let x0 = screenWidth / 2;
     let y0 = screenHeight / 2;
     let radius = 30;
@@ -313,7 +318,6 @@ function startCalibrationAnimation(calibCtx, screenWidth, screenHeight) {
         }
 
         let pos = positions[stage % positions.length];
-
         let t = ((nowtime - 3) % 2) / 2;
         let xMove = x0 + (pos.x - x0) * t;
         let yMove = y0 + (pos.y - y0) * t;
@@ -328,20 +332,7 @@ function startCalibrationAnimation(calibCtx, screenWidth, screenHeight) {
         calibCtx.textAlign = 'center';
         calibCtx.fillText(`${positions.length - stage}`, screenWidth / 2, 50);
 
-        if (t >= 0.75 && t <= 1) {
-            const timestamp = performance.now() / 1000;
-            const normalizedX = xMove / screenWidth;  // 추가된 코드
-            const normalizedY = yMove / screenHeight; // 추가된 코드
-            faceMeshData.push({
-                timestamp: timestamp,
-                circlePosition: { x: normalizedX, y: normalizedY }, // 수정된 코드
-                faceLandmarks: latestFaceLandmarks
-            });
-        }
-
-
         requestAnimationFrame(animate);
-
         x0 = xMove;
         y0 = yMove;
     }
@@ -360,90 +351,18 @@ function stopCalibration() {
     calibrationScreen.style.display = 'none';
 
     alert('캘리브레이션이 끝났습니다. 이제 다른 창으로 이동하여 원하는 활동을 진행하세요.');
-
-    // 모델 초기화 호출 시 `faceMeshData` 전달
-    if (typeof initializeModel === 'function') {
-        initializeModel(faceMeshData).then(() => {
-            console.log('회귀 모델 훈련 완료');
-        }).catch(err => {
-            console.error('모델 초기화 중 오류 발생:', err);
-        });
-    } else {
-        console.error('initializeModel 함수가 정의되지 않았습니다.');
-    }
 }
 
 calibrationBtn.addEventListener('click', () => {
-    // Removed redundant recorder starts to ensure continuous recording
-    // mediaRecorder.start();
-    // screenRecorder.start();
     startCalibration();
     calibrationBtn.style.display = 'none';
+    stopBtn.style.display = 'inline-block';
 });
 
-// 오버레이를 그리는 함수 수정
 function drawOverlay(overlayCtx, overlayCanvas) {
     function drawFrame() {
-        // 오버레이 캔버스 초기화
         overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
-
-        if (window.gazeModel && latestFaceLandmarks) {
-            const gazePoint = predictGaze(window.gazeModel, latestFaceLandmarks);
-            if (gazePoint) {
-                // 예측된 시선 위치에 반투명한 큰 원 그리기
-                overlayCtx.beginPath();
-                overlayCtx.arc(
-                    gazePoint.x * overlayCanvas.width,
-                    gazePoint.y * overlayCanvas.height,
-                    50, // 원의 반지름
-                    0, 2 * Math.PI
-                );
-                overlayCtx.fillStyle = 'rgba(0, 0, 255, 0.3)'; // 파란색 반투명
-                overlayCtx.fill();
-
-                // gazeData에 시선 좌표 저장
-                const timestamp = performance.now() / 1000;
-                gazeData.push({
-                    timestamp: parseFloat(timestamp.toFixed(2)),
-                    x: parseFloat(gazePoint.x.toFixed(2)),
-                    y: parseFloat(gazePoint.y.toFixed(2))
-                });
-            }
-        }
-
         requestAnimationFrame(drawFrame);
     }
     drawFrame();
-}
-
-// gaze 데이터 저장 함수 추가 (추가된 코드)
-function saveGazeData() {
-    const blob = new Blob([JSON.stringify(gazeData)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.style.display = 'none';
-    a.href = url;
-    a.download = 'gaze_data.json';
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => {
-        document.body.removeChild(a);
-        window.URL.revokeObjectURL(url);
-    }, 100);
-}
-
-// 웹캠 영상 저장 함수 추가
-function saveWebcamVideo() {
-    const blob = new Blob(recordedChunks, { type: 'video/webm' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.style.display = 'none';
-    a.href = url;
-    a.download = 'webcam_recording.webm';
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => {
-        document.body.removeChild(a);
-        window.URL.revokeObjectURL(url);
-    }, 100);
 }
