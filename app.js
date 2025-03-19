@@ -2,6 +2,7 @@ let webcamStream, screenStream, faceMesh;
 let mediaRecorder, screenRecorder;
 let webcamChunks = [];
 let screenChunks = [];
+let recordingTimestamp;
 
 const canvasElement = document.getElementById('output');
 const canvasCtx = canvasElement.getContext('2d');
@@ -22,6 +23,15 @@ stopBtn.addEventListener('click', stopRecording);
 
 async function startRecording() {
     try {
+        recordingTimestamp = new Date().toLocaleString('ko-KR', {
+            year: '2-digit',
+            month: '2-digit',
+            day: '2-digit',
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: false
+        }).replace(/[. :]/g, '').replace(/(\d{6})(\d{4})/, '$1-$2');
+
         const webcamConstraints = {
             video: {
                 width: { ideal: 1280 },
@@ -144,14 +154,7 @@ function stopRecording() {
 }
 
 function saveScreenVideo() {
-    const timestamp = new Date().toLocaleString('ko-KR', {
-        year: '2-digit',
-        month: '2-digit',
-        day: '2-digit',
-        hour: 'numeric',
-        minute: '2-digit',
-        hour12: false
-    }).replace(/[. :]/g, '').replace(/(\d{6})(\d{4})/, '$1-$2');
+    const timestamp = recordingTimestamp;
 
     const blob = new Blob(screenChunks, { type: 'video/webm' });
     screenChunks = [];
@@ -168,14 +171,7 @@ function saveScreenVideo() {
 }
 
 function saveWebcamVideo() {
-    const timestamp = new Date().toLocaleString('ko-KR', {
-        year: '2-digit',
-        month: '2-digit',
-        day: '2-digit',
-        hour: 'numeric',
-        minute: '2-digit',
-        hour12: false
-    }).replace(/[. :]/g, '').replace(/(\d{6})(\d{4})/, '$1-$2');
+    const timestamp = recordingTimestamp;
 
     const blob = new Blob(webcamChunks, { type: 'video/webm' });
     webcamChunks = [];
@@ -266,19 +262,26 @@ async function startCalibration() {
 
 function startCalibrationAnimation(calibCtx, screenWidth, screenHeight) {
     const positions = [
-        {x: 0.01 * screenWidth, y: 0.01 * screenHeight},
-        {x: 0.99 * screenWidth, y: 0.01 * screenHeight},
-        {x: 0.99 * screenWidth, y: 0.99 * screenHeight},
-        {x: 0.01 * screenWidth, y: 0.99 * screenHeight},
-        {x: 0.5 * screenWidth, y: 0.01 * screenHeight},
-        {x: 0.5 * screenWidth, y: 0.99 * screenHeight},
-        {x: 0.01 * screenWidth, y: 0.5 * screenHeight},
-        {x: 0.99 * screenWidth, y: 0.5 * screenHeight},
-        {x: 0.5 * screenWidth, y: 0.5 * screenHeight},
-        {x: 0.3 * screenWidth, y: 0.3 * screenHeight},
-        {x: 0.7 * screenWidth, y: 0.3 * screenHeight},
-        {x: 0.7 * screenWidth, y: 0.7 * screenHeight},
-        {x: 0.3 * screenWidth, y: 0.7 * screenHeight}
+        {x: 0.01 * screenWidth, y: 0.01 * screenHeight},  // 좌상단
+        {x: 0.5 * screenWidth, y: 0.01 * screenHeight},   // 상단 중앙
+        {x: 0.99 * screenWidth, y: 0.01 * screenHeight},  // 우상단
+        {x: 0.99 * screenWidth, y: 0.5 * screenHeight},   // 우측 중앙
+        {x: 0.99 * screenWidth, y: 0.99 * screenHeight},  // 우하단
+        {x: 0.5 * screenWidth, y: 0.99 * screenHeight},   // 하단 중앙
+        {x: 0.01 * screenWidth, y: 0.99 * screenHeight},  // 좌하단
+        {x: 0.01 * screenWidth, y: 0.5 * screenHeight},   // 좌측 중앙
+        {x: 0.01 * screenWidth, y: 0.01 * screenHeight},  // 좌상단
+        {x: 0.5 * screenWidth, y: 0.01 * screenHeight},   // 상단 중앙
+        {x: 0.99 * screenWidth, y: 0.01 * screenHeight},  // 우상단
+        {x: 0.5 * screenWidth, y: 0.01 * screenHeight},   // 상단 중앙
+        {x: 0.01 * screenWidth, y: 0.01 * screenHeight},  // 좌상단
+        {x: 0.01 * screenWidth, y: 0.5 * screenHeight},   // 좌측 중앙
+        {x: 0.01 * screenWidth, y: 0.99 * screenHeight},  // 좌하단
+        {x: 0.5 * screenWidth, y: 0.99 * screenHeight},   // 하단 중앙
+        {x: 0.99 * screenWidth, y: 0.99 * screenHeight},  // 우하단
+        {x: 0.99 * screenWidth, y: 0.5 * screenHeight},   // 우측 중앙
+        {x: 0.99 * screenWidth, y: 0.01 * screenHeight},  // 우상단
+        {x: 0.5 * screenWidth, y: 0.01 * screenHeight},   // 상단 중앙
     ];
 
     let x0 = screenWidth / 2;
@@ -289,10 +292,17 @@ function startCalibrationAnimation(calibCtx, screenWidth, screenHeight) {
     calibCtx.clearRect(0, 0, screenWidth, screenHeight);
     calibCtx.fillStyle = 'black';
     calibCtx.fillRect(0, 0, screenWidth, screenHeight);
+    
+    // 시작 화면에 빨간 공 추가
+    calibCtx.beginPath();
+    calibCtx.arc(x0, y0, radius, 0, 2 * Math.PI);
+    calibCtx.fillStyle = 'red';
+    calibCtx.fill();
+    
     calibCtx.fillStyle = 'white';
     calibCtx.font = 'bold 48px Arial';
     calibCtx.textAlign = 'center';
-    calibCtx.fillText('빨간 공을 눈으로 따라가세요', screenWidth / 2, screenHeight / 2);
+    calibCtx.fillText('빨간 공을 눈으로 따라가세요', screenWidth / 2, screenHeight / 2 - 60);
 
     setTimeout(() => {
         animate();
