@@ -26,6 +26,16 @@ guideFooter = document.getElementById('guideFooter');
 
 let latestFaceLandmarks = null;
 
+function pickSupportedMimeType(candidates){
+    if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) return '';
+    for (const type of candidates){
+        try{
+            if (MediaRecorder.isTypeSupported(type)) return type;
+        } catch(e){}
+    }
+    return '';
+}
+
 startBtn.addEventListener('click', async () => {
     await startRecording();
 });
@@ -89,10 +99,14 @@ async function startRecording() {
         await screenVideo.play();
 
         // 화면 녹화
-        screenRecorder = new MediaRecorder(screenStream, {
-            mimeType: 'video/webm',
-            videoBitsPerSecond: 700000
-        });
+        const screenRecorderOptions = { videoBitsPerSecond: 700000 };
+        const screenMimeType = pickSupportedMimeType([
+            'video/webm;codecs=vp9,opus',
+            'video/webm;codecs=vp8,opus',
+            'video/webm'
+        ]);
+        if (screenMimeType) screenRecorderOptions.mimeType = screenMimeType;
+        screenRecorder = new MediaRecorder(screenStream, screenRecorderOptions);
         screenRecorder.ondataavailable = (event) => {
             if (event.data.size > 0) {
                 screenChunks.push(event.data);
@@ -101,11 +115,20 @@ async function startRecording() {
         screenRecorder.start();
         screenRecorder.onstop = saveScreenVideo;
 
-        // 화상 녹화 (landmark는 오직 canvas에만 표시되고, 원본은 그대로 저장)
-        mediaRecorder = new MediaRecorder(webcamStream, { 
-            mimeType: 'video/webm', 
-            videoBitsPerSecond: 1500000 
-        });
+        // 화상 녹화 (마이크 오디오를 비디오 트랙에 합쳐 저장)
+        const webcamMixedStream = new MediaStream(webcamStream.getVideoTracks());
+        if (micStream){
+            const micTrack = micStream.getAudioTracks()[0];
+            if (micTrack) webcamMixedStream.addTrack(micTrack);
+        }
+        const webcamRecorderOptions = { videoBitsPerSecond: 1500000 };
+        const webcamMimeType = pickSupportedMimeType([
+            'video/webm;codecs=vp9,opus',
+            'video/webm;codecs=vp8,opus',
+            'video/webm'
+        ]);
+        if (webcamMimeType) webcamRecorderOptions.mimeType = webcamMimeType;
+        mediaRecorder = new MediaRecorder(webcamMixedStream, webcamRecorderOptions);
         mediaRecorder.ondataavailable = (event) => {
             if (event.data.size > 0) {
                 webcamChunks.push(event.data);
