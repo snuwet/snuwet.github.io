@@ -8,6 +8,9 @@ let overlayCanvas = null;
 let overlayCtx = null;
 let overlayAnimationFrameId = null;
 let overlayResizeHandler = null;
+let guideOverlay = null;
+let guideModal = null;
+let guideFooter = null;
 
 const canvasElement = document.getElementById('output');
 const canvasCtx = canvasElement.getContext('2d');
@@ -17,6 +20,9 @@ const startBtn = document.getElementById('startBtn');
 const stopBtn = document.getElementById('stopBtn');
 const screenVideo = document.getElementById('screen');
 const calibrationBtn = document.getElementById('calibrationBtn');
+guideOverlay = document.getElementById('guideOverlay');
+guideModal = document.getElementById('guideModal');
+guideFooter = document.getElementById('guideFooter');
 
 let latestFaceLandmarks = null;
 
@@ -38,6 +44,9 @@ async function startRecording() {
             hour12: false
         }).replace(/[. :]/g, '').replace(/(\d{6})(\d{4})/, '$1-$2');
 
+        showGuideOverlay();
+        setTimeout(() => { hideGuideModal(); }, 1200);
+
         const webcamConstraints = {
             video: {
                 width: { ideal: 1280 },
@@ -47,6 +56,7 @@ async function startRecording() {
             audio: false
         };
 
+        showGuideFooter("카메라권한 안내창에서 '항상 허용'을 클릭하세요.");
         webcamStream = await navigator.mediaDevices.getUserMedia(webcamConstraints);
         const webcamVideo = document.createElement('video');
         webcamVideo.srcObject = webcamStream;
@@ -65,7 +75,9 @@ async function startRecording() {
         };
         sendToFaceMesh();
 
+        showGuideFooter("마이크권한 안내창에서 '항상 허용'을 클릭하세요.<br/>마이크 목록에 여러개가 뜨는 경우, 소리내어 말해서 테스트해보고 작동하는 마이크로 선택하세요.");
         await getMicrophoneStream();
+        showGuideFooter("'전체 화면'을 선택하고 '공유'를 클릭하세요.");
         await startScreenRecording();
         try {
             if (micStream) {
@@ -119,6 +131,10 @@ async function startRecording() {
         window.addEventListener('resize', overlayResizeHandler);
         drawOverlay();
 
+        // After all permissions granted: show tip without dim background
+        showGuideOverlayTransparent();
+        showGuideFooter("얼굴과 화면이 제대로 보인다면 위쪽의 캘리브레이션 시작 버튼을 클릭하세요.<br/>캘리브레이션이 시작되면, 빨간색 공이 나타나 움직이기 시작합니다.<br/>빨간 공의 움직임을 집중해서 눈으로 잘 따라가세요!");
+        calibrationBtn.classList.add('pulse-outline');
         startBtn.style.display = 'none';
         calibrationBtn.style.display = 'inline-block';
         stopBtn.style.display = calibrationBtn.style.display === 'none' ? 'inline-block' : 'none';
@@ -126,6 +142,8 @@ async function startRecording() {
 
     } catch (err) {
         console.error("녹화를 시작할 수 없습니다:", err);
+        showGuideOverlay();
+        showGuideFooter("시작에 실패했습니다. 창을 닫고 재접속 후 다시 시도하세요.");
     }
 }
 
@@ -141,6 +159,7 @@ async function startScreenRecording() {
         screenStream = await navigator.mediaDevices.getDisplayMedia(displayMediaOptions);
     } catch (err) {
         console.error("Error: " + err);
+        throw err;
     }
 }
 
@@ -189,6 +208,7 @@ function stopRecording() {
     overlayResizeHandler = null;
     recordingStartMs = null;
     if (overlayCanvas) { overlayCanvas.remove(); overlayCanvas = null; overlayCtx = null; }
+    hideGuideOverlay();
 }
 
 function saveScreenVideo() {
@@ -399,12 +419,18 @@ function stopCalibration() {
     calibrationScreen.style.display = 'none';
 
     alert('캘리브레이션이 끝났습니다. 이제 다른 창으로 이동하여 원하는 활동을 진행하세요.');
+
+    // Show follow-up guidance in footer
+    showGuideOverlayTransparent();
+    showGuideFooter('모든 활동이 끝난 뒤, 녹화를 종료하려면 위의 완료 버튼을 누르세요.');
 }
 
 calibrationBtn.addEventListener('click', () => {
     startCalibration();
     calibrationBtn.style.display = 'none';
     stopBtn.style.display = 'inline-block';
+    calibrationBtn.classList.remove('pulse-outline');
+    hideGuideFooter();
 });
 
 function drawOverlay() {
@@ -450,4 +476,42 @@ function drawOverlay() {
     }
 
     overlayAnimationFrameId = requestAnimationFrame(drawOverlay);
+}
+
+function showGuideOverlay(){
+    if (guideOverlay){
+        guideOverlay.style.background = 'rgba(0,0,0,0.5)';
+        guideOverlay.style.display = 'flex';
+    }
+}
+function showGuideOverlayTransparent(){
+    if (guideOverlay){
+        guideOverlay.style.background = 'transparent';
+        guideOverlay.style.display = 'flex';
+    }
+}
+function hideGuideOverlay(){
+    if (guideOverlay) guideOverlay.style.display = 'none';
+    hideGuideModal();
+    // Do not force-hide footer here; footer may be used without dim background
+}
+function showGuideModal(text){
+    if (guideOverlay) guideOverlay.style.display = 'flex';
+    if (guideModal){
+        guideModal.textContent = text || '';
+        guideModal.style.display = 'block';
+    }
+}
+function hideGuideModal(){
+    if (guideModal) guideModal.style.display = 'none';
+}
+function showGuideFooter(text){
+    if (guideOverlay) guideOverlay.style.display = 'flex';
+    if (guideFooter){
+        guideFooter.innerHTML = text || '';
+        guideFooter.style.display = 'block';
+    }
+}
+function hideGuideFooter(){
+    if (guideFooter) guideFooter.style.display = 'none';
 }
