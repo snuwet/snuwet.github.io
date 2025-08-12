@@ -1,8 +1,13 @@
-let webcamStream, screenStream, faceMesh;
+let webcamStream, screenStream, micStream, faceMesh;
 let mediaRecorder, screenRecorder;
 let webcamChunks = [];
 let screenChunks = [];
 let recordingTimestamp;
+let recordingStartMs = null;
+let overlayCanvas = null;
+let overlayCtx = null;
+let overlayAnimationFrameId = null;
+let overlayResizeHandler = null;
 
 const canvasElement = document.getElementById('output');
 const canvasCtx = canvasElement.getContext('2d');
@@ -23,6 +28,7 @@ stopBtn.addEventListener('click', stopRecording);
 
 async function startRecording() {
     try {
+        recordingStartMs = Date.now();
         recordingTimestamp = new Date().toLocaleString('ko-KR', {
             year: '2-digit',
             month: '2-digit',
@@ -59,7 +65,14 @@ async function startRecording() {
         };
         sendToFaceMesh();
 
+        await getMicrophoneStream();
         await startScreenRecording();
+        try {
+            if (micStream) {
+                const micTrack = micStream.getAudioTracks()[0];
+                if (micTrack) screenStream.addTrack(micTrack);
+            }
+        } catch (e) {}
         screenVideo.srcObject = screenStream;
         await screenVideo.play();
 
@@ -89,8 +102,7 @@ async function startRecording() {
         mediaRecorder.start();
         mediaRecorder.onstop = saveWebcamVideo;
 
-        // 오버레이 캔버스
-        const overlayCanvas = document.createElement('canvas');
+        overlayCanvas = document.createElement('canvas');
         overlayCanvas.width = window.innerWidth;
         overlayCanvas.height = window.innerHeight;
         overlayCanvas.style.position = 'fixed';
@@ -98,8 +110,14 @@ async function startRecording() {
         overlayCanvas.style.left = '0';
         overlayCanvas.style.pointerEvents = 'none';
         document.body.appendChild(overlayCanvas);
-        const overlayCtx = overlayCanvas.getContext('2d');
-        drawOverlay(overlayCtx, overlayCanvas);
+        overlayCtx = overlayCanvas.getContext('2d');
+        overlayResizeHandler = () => {
+            if (!overlayCanvas) return;
+            overlayCanvas.width = window.innerWidth;
+            overlayCanvas.height = window.innerHeight;
+        };
+        window.addEventListener('resize', overlayResizeHandler);
+        drawOverlay();
 
         startBtn.style.display = 'none';
         calibrationBtn.style.display = 'inline-block';
@@ -126,6 +144,21 @@ async function startScreenRecording() {
     }
 }
 
+async function getMicrophoneStream() {
+    try {
+        micStream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true
+            }
+        });
+    } catch (err) {
+        console.warn("마이크를 사용할 수 없습니다:", err);
+        micStream = null;
+    }
+}
+
 function stopRecording() {
     // 모든 트랙 정지
     if (webcamStream) {
@@ -133,6 +166,9 @@ function stopRecording() {
     }
     if (screenStream) {
         screenStream.getTracks().forEach(track => track.stop());
+    }
+    if (micStream) {
+        micStream.getTracks().forEach(track => track.stop());
     }
 
     // 녹화 중지 -> onstop 이벤트에서 파일 다운로드 실행
@@ -147,10 +183,12 @@ function stopRecording() {
     stopBtn.style.display = 'none';
     stopBtn.disabled = true;
 
-    const overlayCanvas = document.querySelector('canvas[style*="position: fixed"]');
-    if (overlayCanvas) {
-        overlayCanvas.remove();
-    }
+    if (overlayAnimationFrameId) cancelAnimationFrame(overlayAnimationFrameId);
+    if (overlayResizeHandler) window.removeEventListener('resize', overlayResizeHandler);
+    overlayAnimationFrameId = null;
+    overlayResizeHandler = null;
+    recordingStartMs = null;
+    if (overlayCanvas) { overlayCanvas.remove(); overlayCanvas = null; overlayCtx = null; }
 }
 
 function saveScreenVideo() {
@@ -369,10 +407,47 @@ calibrationBtn.addEventListener('click', () => {
     stopBtn.style.display = 'inline-block';
 });
 
-function drawOverlay(overlayCtx, overlayCanvas) {
-    function drawFrame() {
-        overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
-        requestAnimationFrame(drawFrame);
+function drawOverlay() {
+    if (!overlayCtx || !overlayCanvas) return;
+    overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+
+    const padding = 12;
+    const now = Date.now();
+    const elapsedMs = recordingStartMs ? now - recordingStartMs : 0;
+    const mm = String(Math.floor(elapsedMs / 60000)).padStart(2, '0');
+    const ss = String(Math.floor((elapsedMs % 60000) / 1000)).padStart(2, '0');
+
+    overlayCtx.font = '14px Arial';
+    overlayCtx.fillStyle = 'rgba(0,0,0,0.35)';
+    overlayCtx.fillRect(0, 0, 210, 40);
+
+    overlayCtx.beginPath();
+    overlayCtx.arc(padding + 8, padding + 8, 6, 0, Math.PI * 2);
+    overlayCtx.fillStyle = 'red';
+    overlayCtx.fill();
+
+    overlayCtx.fillStyle = 'white';
+    overlayCtx.fillText('REC', padding + 20, padding + 12);
+    overlayCtx.fillText(`${mm}:${ss}`, padding + 60, padding + 12);
+
+    const faceDetected = Array.isArray(latestFaceLandmarks) && latestFaceLandmarks.length > 0;
+    overlayCtx.fillText(`Face: ${faceDetected ? 'detected' : 'none'}`, padding + 120, padding + 12);
+
+    if (window.gazeModel && faceDetected) {
+        try {
+            const pred = predictGaze(window.gazeModel, latestFaceLandmarks);
+            if (pred && Number.isFinite(pred.x) && Number.isFinite(pred.y)) {
+                const sx = window.screen.width || overlayCanvas.width;
+                const sy = window.screen.height || overlayCanvas.height;
+                const x = (pred.x / sx) * overlayCanvas.width;
+                const y = (pred.y / sy) * overlayCanvas.height;
+                overlayCtx.beginPath();
+                overlayCtx.arc(x, y, 6, 0, Math.PI * 2);
+                overlayCtx.fillStyle = 'rgba(0, 200, 255, 0.8)';
+                overlayCtx.fill();
+            }
+        } catch (e) {}
     }
-    drawFrame();
+
+    overlayAnimationFrameId = requestAnimationFrame(drawOverlay);
 }

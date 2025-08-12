@@ -1,9 +1,10 @@
 function prepareData(data) {
     const inputs = [];
-    const outputs = []; 
+    const outputs = [];
+    if (!Array.isArray(data) || data.length === 0) return { inputs, outputs };
 
     data.forEach(entry => {
-        if (entry.faceLandmarks && entry.faceLandmarks.length > 0) {
+        if (entry && entry.faceLandmarks && entry.faceLandmarks.length > 0 && entry.circlePosition) {
             const landmarks = entry.faceLandmarks.flatMap(landmark => [landmark.x, landmark.y, landmark.z]);
             inputs.push(landmarks);
             outputs.push([entry.circlePosition.x, entry.circlePosition.y]);
@@ -14,25 +15,17 @@ function prepareData(data) {
 }
 
 async function trainModel(inputs, outputs) {
+    if (!inputs || inputs.length === 0 || !outputs || outputs.length === 0) return null;
+
     const tfInputs = tf.tensor2d(inputs);
     const tfOutputs = tf.tensor2d(outputs);
 
     const model = tf.sequential();
-    model.add(tf.layers.dense({
-        units: 2,
-        inputShape: [inputs[0].length]
-    }));
+    model.add(tf.layers.dense({ units: 2, inputShape: [inputs[0].length] }));
 
-    model.compile({
-        optimizer: tf.train.adam(),
-        loss: 'meanSquaredError'
-    });
+    model.compile({ optimizer: tf.train.adam(), loss: 'meanSquaredError' });
 
-    await model.fit(tfInputs, tfOutputs, {
-        epochs: 100,
-        batchSize: 32,
-        shuffle: true
-    });
+    await model.fit(tfInputs, tfOutputs, { epochs: 100, batchSize: 32, shuffle: true });
 
     return model;
 }
@@ -53,9 +46,11 @@ function predictGaze(model, faceLandmarks) {
 
 async function initializeModel(data) {
     const { inputs, outputs } = prepareData(data);
+    if (!inputs.length || !outputs.length) {
+        window.gazeModel = null;
+        return null;
+    }
     const model = await trainModel(inputs, outputs);
-
     window.gazeModel = model;
+    return model;
 }
-
-initializeModel();

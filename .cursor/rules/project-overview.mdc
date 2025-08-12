@@ -1,0 +1,23 @@
+---
+alwaysApply: true
+description: SNUWET 웹앱의 목적과 핵심 기능 요약, 진입점 및 주요 파일 안내
+---
+
+# SNUWET 프로젝트 개요
+
+- 목적: 브라우저에서 웹캠 얼굴 랜드마크를 실시간 추적하면서 화면/웹캠을 동시 녹화하고, 전체 화면 캘리브레이션을 제공하는 정적 웹앱
+
+- 주요 기능
+  - 웹캠 얼굴 랜드마크 추적(MediaPipe Face Mesh) → 캔버스에만 시각화, 녹화 원본에는 미표시
+  - 화면 녹화와 웹캠 녹화 동시 진행, 종료 시 개별 파일 다운로드(.webm 컨텐츠; 영상파일이 사용자에게 바로 노출되는 것을 막기 위해 의도적으로 .dat 확장자 사용)
+  - 전체 화면 캘리브레이션 애니메이션(빨간 공이 화면의 여러 지점으로 이동)
+
+- 구조/진입점
+  - [index.html](mdc:index.html): UI/의존성 로드, 버튼·캔버스 구성
+  - [app.js](mdc:app.js): 스트림/녹화/FaceMesh 연동, 오버레이 HUD, 캘리브레이션 로직
+  - [tracker.js](mdc:tracker.js): gaze 모델 학습/예측 유틸리티(데이터 없으면 비활성)
+
+- 실행 환경: HTTPS 또는 localhost 권장, 카메라/화면 캡처 권한 필요
+
+- 외부 의존성(CDN): MediaPipe Face Mesh, TensorFlow.js
+
